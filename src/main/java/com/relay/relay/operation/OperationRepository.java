@@ -2,6 +2,7 @@ package com.relay.relay.operation;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface OperationRepository
@@ -11,4 +12,5 @@ public interface OperationRepository
             String callerId,
             String idempotencyKey
     );
+    List<Operation> findByState(OperationState state);
 }

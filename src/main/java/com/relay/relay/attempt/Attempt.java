@@ -18,14 +18,13 @@ public class Attempt {
     private String  id;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "operation_id", nullable = false)
+    private Operation operation;
 
     @Column(name = "attempt_number", nullable = false)
-    private Operation operation;
+    private int attemptNumber;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private int attemptNumber;
-
     private AttemptState state;
 
     @Column(name = "started_at", nullable = false)
