@@ -34,6 +34,7 @@ public class Operation {
         this.idempotencyKey = idempotencyKey;
     }
 
+
     public void transitionTo(OperationState newState) {
 
         if (!isValidTransition(this.state, newState)) {

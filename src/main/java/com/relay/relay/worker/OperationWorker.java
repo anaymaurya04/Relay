@@ -17,7 +17,7 @@ public class OperationWorker {
         this.operationRepository = operationRepository;
     }
 
-    @Scheduled(fixedDelay = 5000)
+    //@Scheduled(fixedDelay = 5000)
     public void processPendingOperation(){
         List<Operation> operations = operationRepository.findByState(OperationState.PENDING);
 

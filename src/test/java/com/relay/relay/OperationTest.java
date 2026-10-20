@@ -10,7 +10,7 @@ class OperationTest {
     @Test
     void operationCannotMoveFromSuccessToPending() {
 
-        Operation operation = new Operation("OP-123");
+        Operation operation = new Operation("OP-123","caller-1","key1");
 
         operation.transitionTo(OperationState.PROCESSING);
         operation.transitionTo(OperationState.SUCCESS);
@@ -24,8 +24,7 @@ class OperationTest {
     @Test
     void operationCanSuccessfullyComplete() {
 
-        Operation operation = new Operation("OP-123");
-
+        Operation operation = new Operation("OP-123","caller-1","key1");
         assertEquals(
                 OperationState.PENDING,
                 operation.getState()

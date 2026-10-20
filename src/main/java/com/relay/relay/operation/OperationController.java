@@ -6,10 +6,19 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/operations")
 public class OperationController {
 
+    private OperationClaimService operationClaimService;
+
     private final OperationService operationService;
 
-    public OperationController(OperationService operationService) {
+    public OperationController(OperationService operationService,OperationClaimService operationClaimService) {
         this.operationService = operationService;
+        this.operationClaimService = operationClaimService;
+    }
+
+    @PostMapping("/claim-next")
+    public String claimNextOperation() {
+        return operationClaimService.claimNextOperation()
+                .orElse("No pending operations");
     }
 
     @PostMapping
