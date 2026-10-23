@@ -12,5 +12,5 @@ public interface OperationRepository
             String callerId,
             String idempotencyKey
     );
-    List<Operation> findByState(OperationState state);
+
 }

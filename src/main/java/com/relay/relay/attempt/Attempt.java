@@ -12,7 +12,11 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "attempts")
+@Table(name = "attempts"
+        , uniqueConstraints = @UniqueConstraint(
+                name = "uk_attempt_operation_number",
+                columnNames = {"operation_id","attempt_number"}
+))
 public class Attempt {
     @Id
     private String  id;
