@@ -5,12 +5,18 @@ import com.relay.relay.attempt.AttemptRepository;
 import com.relay.relay.operation.Operation;
 import com.relay.relay.operation.OperationClaimService;
 import com.relay.relay.operation.OperationRepository;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 
 @Component
+@ConditionalOnProperty(
+        name = "relay.worker.enabled",
+        havingValue = "true",
+        matchIfMissing = true
+)
 public class OperationWorker {
     private  final OperationRepository operationRepository;
     private final AttemptRepository attemptRepository;
