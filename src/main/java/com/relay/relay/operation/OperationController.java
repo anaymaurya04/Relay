@@ -11,22 +11,10 @@ import java.util.List;
 @RequestMapping("/operations")
 public class OperationController {
 
-    private final OperationClaimService operationClaimService;
-
     private final OperationService operationService;
 
-    public OperationController(
-            OperationService operationService,
-            OperationClaimService operationClaimService
-    ) {
+    public OperationController(OperationService operationService) {
         this.operationService = operationService;
-        this.operationClaimService = operationClaimService;
-    }
-
-    @PostMapping("/claim-next")
-    public String claimNextOperation() {
-        return operationClaimService.claimNextOperation()
-                .orElse("No pending operations");
     }
 
     @PostMapping

@@ -53,7 +53,6 @@ A `200` does not prove the business operation finished, and a timeout does not p
 | `POST` | `/operations` | Create an operation. Requires `Caller-Id` and `Idempotency-Key` headers. |
 | `GET` | `/operations/{id}` | Read one operation. |
 | `GET` | `/operations/{id}/attempts` | Read the attempt history for an operation. |
-| `POST` | `/operations/claim-next` | Debug endpoint. Claims one pending operation. Not part of the public API. |
 
 ### Create an operation
 
@@ -113,6 +112,8 @@ Repeating the same `Caller-Id` + `Idempotency-Key` returns the existing operatio
 ```
 
 There is no message broker. PostgreSQL is both the database and the queue, which keeps the first version to one process and one datastore.
+
+Claiming is internal: only the scheduled worker moves an operation to `PROCESSING`. There is no HTTP endpoint that claims work on demand.
 
 An **operation** is the caller's intent. An **attempt** is one actual execution of it. They are separate rows because retries, auditing, and "how many times did we call the destination?" all depend on that distinction.
 
