@@ -17,9 +17,15 @@ public final class OutcomeClassifier {
 
     public static AttemptOutcome classify(HttpCall call) {
 
-        if (call.timedOut()) {
+        if (call.failure() != null) {
+            AttemptState attemptState = switch (call.failure()) {
+                // The request provably never left this machine.
+                case CONNECT_TIMEOUT, NOT_SENT -> AttemptState.FAILED;
+                // The request may have arrived; the outcome is genuinely unknown.
+                case REQUEST_TIMEOUT, AMBIGUOUS -> AttemptState.UNKNOWN;
+            };
             return new AttemptOutcome(
-                    AttemptState.UNKNOWN,
+                    attemptState,
                     OperationState.RETRY_WAITING,
                     null,
                     call.error()
@@ -27,12 +33,8 @@ public final class OutcomeClassifier {
         }
 
         if (call.statusCode() == null) {
-            // Connection refused, DNS failure, TLS failure and similar.
-            return new AttemptOutcome(
-                    AttemptState.FAILED,
-                    OperationState.RETRY_WAITING,
-                    null,
-                    call.error()
+            throw new IllegalArgumentException(
+                    "HttpCall must have a response or a failure"
             );
         }
 

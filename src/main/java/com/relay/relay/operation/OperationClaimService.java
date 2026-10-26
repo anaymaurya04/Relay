@@ -23,7 +23,7 @@ public class OperationClaimService {
                 SELECT id
                 FROM operations
                 WHERE state = 'PENDING'
-                ORDER BY id
+                ORDER BY created_at, id
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
                 """,
@@ -39,7 +39,8 @@ public class OperationClaimService {
         jdbcTemplate.update(
                 """
                 UPDATE operations
-                SET state = 'PROCESSING'
+                SET state = 'PROCESSING',
+                    version = version + 1
                 WHERE id = ? AND state = 'PENDING'
                 """,
                 operationId

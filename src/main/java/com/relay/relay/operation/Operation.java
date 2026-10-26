@@ -5,6 +5,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
+
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
@@ -38,6 +40,13 @@ public class Operation {
     @Enumerated(EnumType.STRING)
     private OperationState state;
 
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     public Operation(
             String id,
             String callerId,
@@ -53,6 +62,7 @@ public class Operation {
         this.httpMethod = httpMethod;
         this.requestBody = requestBody;
         this.state = OperationState.PENDING;
+        this.createdAt = Instant.now();
     }
 
     public void transitionTo(OperationState newState) {

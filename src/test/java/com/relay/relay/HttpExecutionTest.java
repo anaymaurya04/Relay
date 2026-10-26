@@ -1,5 +1,7 @@
 package com.relay.relay;
 
+import com.relay.relay.execution.HttpOperationExecutor;
+import com.relay.relay.operation.Operation;
 import com.relay.relay.worker.OperationProcessor;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -15,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -24,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -56,11 +60,16 @@ class HttpExecutionTest {
     private OperationProcessor operationProcessor;
 
     @Autowired
+    private HttpOperationExecutor httpOperationExecutor;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     private static HttpServer destination;
     private static ExecutorService destinationExecutor;
     private static String destinationUrl;
+    private static final ConcurrentLinkedQueue<String> receivedIdempotencyKeys =
+            new ConcurrentLinkedQueue<>();
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -77,7 +86,12 @@ class HttpExecutionTest {
         destinationExecutor = Executors.newFixedThreadPool(4);
         destination.setExecutor(destinationExecutor);
 
-        destination.createContext("/ok", exchange -> respond(exchange, 200));
+        destination.createContext("/ok", exchange -> {
+            receivedIdempotencyKeys.add(
+                    exchange.getRequestHeaders().getFirst("Idempotency-Key")
+            );
+            respond(exchange, 200);
+        });
         destination.createContext("/bad", exchange -> respond(exchange, 400));
         destination.createContext("/fail", exchange -> respond(exchange, 500));
 
@@ -128,6 +142,7 @@ class HttpExecutionTest {
 
     @Test
     void successfulCallMarksAttemptSucceededAndOperationSuccess() throws Exception {
+        receivedIdempotencyKeys.clear();
         String id = createOperation(destinationUrl + "/ok");
 
         operationProcessor.processAll();
@@ -138,6 +153,19 @@ class HttpExecutionTest {
         assertEquals("SUCCEEDED", attempt.get("state"));
         assertEquals(200, responseCode(attempt));
         assertNull(attempt.get("error"));
+
+        assertEquals(
+                List.of(id),
+                new ArrayList<>(receivedIdempotencyKeys),
+                "the destination must receive the operation id as Idempotency-Key"
+        );
+
+        Long version = jdbcTemplate.queryForObject(
+                "SELECT version FROM operations WHERE id = ?",
+                Long.class,
+                id
+        );
+        assertTrue(version != null && version >= 2, "version=" + version);
 
         String attemptsBody = getBody("/operations/" + id + "/attempts");
         assertTrue(attemptsBody.contains("\"state\":\"SUCCEEDED\""));
@@ -201,6 +229,81 @@ class HttpExecutionTest {
         Map<String, Object> attempt = onlyAttempt(id);
         assertEquals("FAILED", attempt.get("state"));
         assertNull(attempt.get("response_code"));
+    }
+
+    @Test
+    void connectionResetAfterRequestIsAmbiguousAndMarkedUnknown() throws Exception {
+        try (ServerSocket resetServer = new ServerSocket(0)) {
+            Thread resetThread = new Thread(() -> {
+                while (!resetServer.isClosed()) {
+                    try (Socket socket = resetServer.accept()) {
+                        // SO_LINGER 0 makes close send RST instead of FIN.
+                        socket.setSoLinger(true, 0);
+                    } catch (IOException closed) {
+                        return;
+                    }
+                }
+            });
+            resetThread.setDaemon(true);
+            resetThread.start();
+
+            String id = createOperation(
+                    "http://localhost:" + resetServer.getLocalPort() + "/reset"
+            );
+
+            operationProcessor.processAll();
+
+            assertEquals("RETRY_WAITING", operationState(id));
+
+            Map<String, Object> attempt = onlyAttempt(id);
+            assertEquals("UNKNOWN", attempt.get("state"));
+            assertNull(attempt.get("response_code"));
+        }
+    }
+
+    @Test
+    void repeatedExecutionSendsSameIdempotencyKey() {
+        Operation operation = new Operation(
+                UUID.randomUUID().toString(),
+                "direct-" + UUID.randomUUID(),
+                "direct-key",
+                destinationUrl + "/ok",
+                "POST",
+                null
+        );
+
+        receivedIdempotencyKeys.clear();
+        httpOperationExecutor.execute(operation);
+        httpOperationExecutor.execute(operation);
+
+        assertEquals(
+                List.of(operation.getId(), operation.getId()),
+                new ArrayList<>(receivedIdempotencyKeys)
+        );
+    }
+
+    @Test
+    void claimsOperationsInCreatedAtOrder() throws Exception {
+        String later = createOperation(destinationUrl + "/ok");
+        String earlier = createOperation(destinationUrl + "/ok");
+
+        jdbcTemplate.update(
+                "UPDATE operations SET created_at = now() - interval '1 hour' WHERE id = ?",
+                earlier
+        );
+        jdbcTemplate.update(
+                "UPDATE operations SET created_at = now() WHERE id = ?",
+                later
+        );
+
+        receivedIdempotencyKeys.clear();
+        operationProcessor.processAll();
+
+        assertEquals(
+                List.of(earlier, later),
+                new ArrayList<>(receivedIdempotencyKeys),
+                "claims must follow created_at, not the random id"
+        );
     }
 
     @Test

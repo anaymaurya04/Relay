@@ -142,8 +142,8 @@ PENDING ───────────▶ PROCESSING ────────
 | ----- | ------- |
 | `RUNNING` | Committed **before** the HTTP call, so the evidence survives a crash. |
 | `SUCCEEDED` | Destination returned 2xx. |
-| `FAILED` | Non-2xx response, or the connection never completed. |
-| `UNKNOWN` | Timeout. The request may have arrived; the outcome is genuinely unknown. |
+| `FAILED` | Non-2xx response, or the request provably never left this machine (connect timeout, refused, DNS, TLS). |
+| `UNKNOWN` | Request timeout, or the connection broke after the request may have been sent. The outcome is genuinely unknown. |
 
 ### Outcome classification
 
@@ -152,13 +152,15 @@ PENDING ───────────▶ PROCESSING ────────
 | `2xx` | `SUCCEEDED` | `SUCCESS` | No |
 | `3xx` (redirects are never followed) | `FAILED` | `FAILED` | No |
 | Other `4xx` | `FAILED` | `FAILED` | No |
-| `408`, `425`, `429`, `5xx` | `FAILED` | `RETRY_WAITING` | Yes (Phase 4) |
-| Timeout | `UNKNOWN` | `RETRY_WAITING` | Yes |
-| Connection refused / DNS / TLS | `FAILED` | `RETRY_WAITING` | Yes |
+| `408`, `425`, `429`, `5xx` | `FAILED` | `RETRY_WAITING` | Not yet — Phase 4 |
+| Connect timeout (request never sent) | `FAILED` | `RETRY_WAITING` | Not yet — Phase 4 |
+| Request timeout (request may have arrived) | `UNKNOWN` | `RETRY_WAITING` | Not yet — Phase 4 |
+| Connection refused / DNS / TLS handshake failure | `FAILED` | `RETRY_WAITING` | Not yet — Phase 4 |
+| Connection reset after the request may have been sent | `UNKNOWN` | `RETRY_WAITING` | Not yet — Phase 4 |
 
 ### Delivery semantics
 
-Relay delivers **at least once** and records every attempt it starts. It cannot promise exactly-once: a timeout may mean the destination already applied the request. Destinations must be idempotent themselves.
+Relay delivers **at least once** and records every attempt it starts. Every attempt sends `Idempotency-Key: <operation-id>`, so a destination that honours the header can deduplicate a retry. Relay cannot promise exactly-once on its own: a timeout may mean the destination already applied the request, and a destination that ignores the header will see duplicates if retried.
 
 ---
 
@@ -172,7 +174,7 @@ Relay delivers **at least once** and records every attempt it starts. It cannot 
 
 ### 1. Configure credentials
 
-The real files are git-ignored; copy the example:
+`.env` is git-ignored; copy the example:
 
 ```powershell
 Copy-Item .env.example .env
@@ -184,36 +186,29 @@ Copy-Item .env.example .env
 DB_PASSWORD=your-postgres-password
 ```
 
-`src/main/resources/application.properties` must also exist locally:
+`src/main/resources/application.properties` is tracked and reads the password from `${DB_PASSWORD}`. No local copy is needed.
 
-```properties
-spring.application.name=relay
-spring.datasource.url=jdbc:postgresql://localhost:5432/relay
-spring.datasource.username=postgres
-spring.datasource.password=${DB_PASSWORD}
+### 2. Apply the schema migrations
 
-spring.jpa.hibernate.ddl-auto=update
-spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.format_sql=true
-```
-
-### 2. Apply the schema migration
-
-`ddl-auto=update` adds columns but does not reliably alter check constraints, so a manual migration is required:
+`ddl-auto=update` adds columns but does not reliably alter existing constraints, so two manual migrations are required. Run them in order:
 
 ```powershell
 $env:PGPASSWORD = "your-postgres-password"
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" `
   -h localhost -U postgres -d relay `
   -f src/main/resources/db/manual/001_phase3_execution.sql
+
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" `
+  -h localhost -U postgres -d relay `
+  -f src/main/resources/db/manual/002_created_at_version.sql
 ```
 
-It is safe to run more than once.
+Both are safe to run more than once.
 
 ### 3. Run
 
 ```powershell
-mvn test                 # 15 tests, real PostgreSQL + real HTTP servers
+mvn test                 # 22 tests, real PostgreSQL + real HTTP servers
 mvn spring-boot:run      # app on :8080, worker polls every 5 s
 ```
 
@@ -258,12 +253,13 @@ No mocks for the database or the HTTP client — the bugs that matter live in co
 
 | Test class | Tests | Covers |
 | ---------- | ----- | ------ |
-| `HttpExecutionTest` | 9 | 2xx, 4xx, 5xx, timeout, connection refused, redirects, allowlist and input validation |
+| `HttpExecutionTest` | 12 | 2xx, 4xx, 5xx, timeouts, connection refused, mid-response reset, redirects, forwarded idempotency key, FIFO claiming, allowlist and input validation |
 | `IdempotencyConcurrencyTest` | 1 | 8 simultaneous duplicate creates against a real database |
-| `OperationTest` | 4 | Operation state machine transitions |
+| `OperationTest` | 4 | Operation state machine transitions and optimistic version increment |
+| `OutcomeClassifierTest` | 4 | Failure kind to attempt/operation state mapping |
 | `RelayApplicationTests` | 1 | Spring context loads |
 
-Last verified run: **15 tests, 0 failures**.
+Last verified run: **22 tests, 0 failures**.
 
 ---
 
@@ -277,7 +273,7 @@ Last verified run: **15 tests, 0 failures**.
 | API | REST |
 | Build | Maven |
 | Testing | JUnit 5, real HTTP servers |
-| Deployment | Not containerised yet |
+| Deployment | Not containerised |
 
 Additional infrastructure is introduced only when a concrete requirement justifies it.
 
