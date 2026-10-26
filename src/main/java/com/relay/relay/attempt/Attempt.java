@@ -12,14 +12,16 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
-@Table(name = "attempts"
-        , uniqueConstraints = @UniqueConstraint(
+@Table(name = "attempts",
+        uniqueConstraints = @UniqueConstraint(
                 name = "uk_attempt_operation_number",
-                columnNames = {"operation_id","attempt_number"}
-))
+                columnNames = {"operation_id", "attempt_number"}
+        ))
 public class Attempt {
+
     @Id
-    private String  id;
+    private String id;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "operation_id", nullable = false)
     private Operation operation;
@@ -50,15 +52,26 @@ public class Attempt {
         this.startedAt = Instant.now();
     }
 
-    public void MarkSucceeded(Integer responseCode){
+    public void markSucceeded(Integer responseCode) {
         this.state = AttemptState.SUCCEEDED;
         this.responseCode = responseCode;
         this.finishedAt = Instant.now();
     }
-    public void MarkFailed(Integer responseCode, String error){
+
+    public void markFailed(Integer responseCode, String error) {
         this.state = AttemptState.FAILED;
         this.responseCode = responseCode;
         this.error = error;
-        this.finishedAt =  Instant.now();
+        this.finishedAt = Instant.now();
+    }
+
+    /**
+     * The request may have reached the destination, but no response arrived
+     * (timeout). The outcome is unknown, not failed.
+     */
+    public void markUnknown(String error) {
+        this.state = AttemptState.UNKNOWN;
+        this.error = error;
+        this.finishedAt = Instant.now();
     }
 }

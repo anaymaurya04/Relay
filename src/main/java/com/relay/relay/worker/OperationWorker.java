@@ -1,16 +1,13 @@
 package com.relay.relay.worker;
 
-import com.relay.relay.attempt.Attempt;
-import com.relay.relay.attempt.AttemptRepository;
-import com.relay.relay.operation.Operation;
-import com.relay.relay.operation.OperationClaimService;
-import com.relay.relay.operation.OperationRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.Optional;
-
+/**
+ * The only scheduled part of the worker. All real work lives in
+ * OperationProcessor so it can be tested without the clock.
+ */
 @Component
 @ConditionalOnProperty(
         name = "relay.worker.enabled",
@@ -18,28 +15,15 @@ import java.util.Optional;
         matchIfMissing = true
 )
 public class OperationWorker {
-    private  final OperationRepository operationRepository;
-    private final AttemptRepository attemptRepository;
-    private final OperationClaimService claimService;
-    public OperationWorker(OperationRepository operationRepository, AttemptRepository attemptRepository, OperationClaimService claimService) {
-        this.operationRepository = operationRepository;
-        this.attemptRepository = attemptRepository;
-        this.claimService = claimService;
+
+    private final OperationProcessor operationProcessor;
+
+    public OperationWorker(OperationProcessor operationProcessor) {
+        this.operationProcessor = operationProcessor;
     }
 
-    @Scheduled(fixedDelay = 5000)
-    public void processPendingOperation(){
-        while (true){
-            Optional<String> claimed = claimService.claimNextOperation();
-            if (claimed.isEmpty()){
-                break;
-            }
-            Operation operation = operationRepository.findById(claimed.get())
-                    .orElseThrow();
-            attemptRepository.save(new Attempt(operation,1));
-        }
-
+    @Scheduled(fixedDelayString = "${relay.worker.poll-interval-ms:5000}")
+    public void processPendingOperations() {
+        operationProcessor.processAll();
     }
-
-
 }

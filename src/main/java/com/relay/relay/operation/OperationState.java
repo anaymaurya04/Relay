@@ -4,5 +4,6 @@ public enum OperationState {
     PENDING,
     PROCESSING,
     RETRY_WAITING,
-    SUCCESS
+    SUCCESS,
+    FAILED
 }

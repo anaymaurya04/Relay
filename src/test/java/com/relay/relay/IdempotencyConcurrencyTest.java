@@ -41,6 +41,10 @@ class IdempotencyConcurrencyTest {
 
     private static final int CONCURRENT_REQUESTS = 8;
 
+    private static final String REQUEST_BODY = """
+            {"targetUrl":"http://localhost:1/ok","httpMethod":"POST"}
+            """;
+
     @Value("${local.server.port}")
     private int port;
 
@@ -96,7 +100,8 @@ class IdempotencyConcurrencyTest {
                             .timeout(Duration.ofSeconds(10))
                             .header("Caller-Id", callerId)
                             .header("Idempotency-Key", idempotencyKey)
-                            .POST(HttpRequest.BodyPublishers.noBody())
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(REQUEST_BODY))
                             .build();
 
                     HttpResponse<String> response = httpClient.send(
